@@ -39,6 +39,22 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [permissions.IsAuthenticated, DocumentPermission]
     queryset = Document.objects.all()
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        expected_version = request.data.get('expected_version')
+
+        if expected_version is not None and int(expected_version) != instance.version:
+            return Response(
+                {
+                    "detail": "Conflict: this document has been modified by someone else since you loaded it.",
+                    "current_version": instance.version,
+                    "current_content": instance.content,
+                },
+                status=status.HTTP_409_CONFLICT
+            )
+
+        return super().update(request, *args, **kwargs)
+
     def perform_update(self, serializer):
         instance = serializer.instance
 
@@ -50,7 +66,6 @@ class DocumentDetailView(generics.RetrieveUpdateDestroyAPIView):
         )
 
         serializer.save(version=instance.version + 1)
-
 
 class DocumentShareView(APIView):
     permission_classes = [permissions.IsAuthenticated]
