@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from rest_framework import status
 from django.db.models import Q
 from .serializers import DocumentSerializer, DocumentShareSerializer, DocumentVersionSerializer
+from django.shortcuts import render
 
 class DocumentPermission(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
@@ -148,3 +149,16 @@ class DocumentVersionRestoreView(APIView):
         document.save()
 
         return Response(DocumentSerializer(document).data, status=status.HTTP_200_OK)
+
+
+def login_page(request):
+    return render(request, 'login.html')
+
+def documents_page(request):
+    return render(request, 'documents_list.html')
+
+def document_editor_page(request, document_id):
+    return render(request, 'document_editor.html')
+
+def register_page(request):
+    return render(request, 'register.html')

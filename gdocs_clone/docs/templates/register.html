@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+
+{% block title %}Sign up · Inkwell{% endblock %}
+
+{% block topbar_actions %}
+  <span>Already have an account? <a href="{% url 'login-page' %}">Log in</a></span>
+{% endblock %}
+
+{% block extra_style %}
+  .auth-wrap {
+    min-height: calc(100vh - 61px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-6) var(--space-4);
+    background:
+      radial-gradient(600px 300px at 85% 0%, rgba(47, 107, 79, 0.06), transparent 60%),
+      var(--color-bg);
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .auth-card__header {
+    margin-bottom: var(--space-5);
+  }
+
+  .auth-card__header h1 {
+    font-size: 22px;
+    margin-bottom: var(--space-1);
+  }
+
+  .auth-card__header p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-ink-muted);
+  }
+
+  .auth-card__footer {
+    margin-top: var(--space-5);
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--color-ink-muted);
+  }
+
+  .hint {
+    font-size: 12.5px;
+    color: var(--color-ink-faint);
+    margin-top: 2px;
+  }
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-card__header">
+      <h1>Create your account</h1>
+      <p>Start writing and sharing documents in seconds.</p>
+    </div>
+
+    <div id="error-msg" class="message message--error"></div>
+
+    <form onsubmit="return false;">
+      <div class="field">
+        <label for="username">Username</label>
+        <input
+          type="text"
+          id="username"
+          class="input"
+          placeholder="Choose a username"
+          oninput="onUserTypes()"
+          autocomplete="username"
+        >
+      </div>
+
+      <div class="field">
+        <label for="email">Email</label>
+        <input
+          type="email"
+          id="email"
+          class="input"
+          placeholder="you@example.com"
+          autocomplete="email"
+        >
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          class="input"
+          placeholder="Create a password"
+          autocomplete="new-password"
+        >
+        <span class="hint">Use at least 8 characters.</span>
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block" onclick="doRegister()">
+        Create account
+      </button>
+    </form>
+
+    <div class="auth-card__footer">
+      Already have an account? <a href="{% url 'login-page' %}">Log in</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+  function onUserTypes() {
+    const errorEl = document.getElementById('error-msg');
+    if (errorEl) errorEl.textContent = '';
+  }
+
+  function doRegister() {
+    const username = document.getElementById('username').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('error-msg');
+    errorEl.textContent = '';
+
+    if (!username || !email || !password) {
+      errorEl.textContent = 'Please fill in every field.';
+      return;
+    }
+
+    fetch('/api/auth/register/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, email, password })
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Could not create your account.');
+        }
+        return res.json();
+      })
+      .then(() => {
+        window.location.href = '/login/';
+      })
+      .catch((err) => {
+        errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+      });
+  }
+</script>
+{% endblock %}

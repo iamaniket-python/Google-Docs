@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Document Editor{% endblock %}
+{% block content %}
+    <div class="container">
+        <a href="/documents/" class="back-link">&larr; Back to documents</a>
+
+        <div class="card">
+            <div class="editor-header">
+                <h2 id="doc-title">Loading...</h2>
+            </div>
+            <textarea id="doc-content" oninput="onUserTypes()"></textarea>
+            <p class="status" id="status-msg"></p>
+            <p class="error" id="error-msg"></p>
+        </div>
+
+        <div class="card">
+            <h4>Share this document</h4>
+            <div class="form-row">
+                <input type="text" id="share-username" placeholder="Username">
+                <select id="share-permission">
+                    <option value="view">View only</option>
+                    <option value="edit">Can edit</option>
+                </select>
+                <button onclick="shareDocument()">Share</button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4>Version History</h4>
+            <button class="secondary" onclick="loadVersions()">Show history</button>
+            <div id="version-list"></div>
+        </div>
+    </div>
+
+    <script>
+        const token = localStorage.getItem('access_token');
+        if (!token) window.location.href = '/login/';
+
+        const documentId = window.location.pathname.split('/')[2];
+        let currentVersion = null;
+        let saveTimeout = null;
+        let socket = null;
+
+        async function loadDocument() {
+            const response = await fetch(`/api/documents/${documentId}/`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+
+            if (response.status === 401) {
+                window.location.href = '/login/';
+                return;
+            }
+            if (response.status === 403 || response.status === 404) {
+                document.getElementById('error-msg').innerText = 'Document not found or access denied.';
+                return;
+            }
+
+            const doc = await response.json();
+            document.getElementById('doc-title').innerText = doc.title;
+            document.getElementById('doc-content').value = doc.content;
+            currentVersion = doc.version;
+
+            connectWebSocket();
+        }
+
+        function connectWebSocket() {
+            socket = new WebSocket(`ws://127.0.0.1:8000/ws/document/${documentId}/?token=${token}`);
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                document.getElementById('doc-content').value = data.content;
+                document.getElementById('status-msg').innerText = `Live update from ${data.username}`;
+            };
+
+            socket.onclose = (e) => {
+                if (e.code === 4001) document.getElementById('error-msg').innerText = 'Not authenticated.';
+                if (e.code === 4003) document.getElementById('error-msg').innerText = 'Access denied to this document.';
+            };
+        }
+
+        function onUserTypes() {
+            const content = document.getElementById('doc-content').value;
+
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ content }));
+            }
+
+            document.getElementById('status-msg').innerText = 'Typing...';
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => saveToServer(content), 1500);
+        }
+
+        async function saveToServer(content) {
+            document.getElementById('status-msg').innerText = 'Saving...';
+
+            const response = await fetch(`/api/documents/${documentId}/`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ content, expected_version: currentVersion }),
+            });
+
+            if (response.status === 409) {
+                const data = await response.json();
+                document.getElementById('error-msg').innerText =
+                    'Conflict! Someone else edited this document. Reloading latest version.';
+                document.getElementById('doc-content').value = data.current_content;
+                currentVersion = data.current_version;
+                return;
+            }
+
+            const data = await response.json();
+            currentVersion = data.version;
+            document.getElementById('status-msg').innerText = 'Saved ✓';
+        }
+
+        async function shareDocument() {
+            const username = document.getElementById('share-username').value;
+            const permission = document.getElementById('share-permission').value;
+
+            const response = await fetch(`/api/documents/${documentId}/share/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({ username, permission }),
+            });
+
+            if (response.ok) {
+                document.getElementById('status-msg').innerText = `Shared with ${username}`;
+            } else {
+                const data = await response.json();
+                document.getElementById('error-msg').innerText = data.detail || 'Share failed.';
+            }
+        }
+
+        async function loadVersions() {
+            const response = await fetch(`/api/documents/${documentId}/versions/`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+            const versions = await response.json();
+
+            const listDiv = document.getElementById('version-list');
+            listDiv.innerHTML = '';
+
+            versions.forEach(v => {
+                const div = document.createElement('div');
+                div.className = 'doc-item';
+                div.innerText = `v${v.version_number} — by ${v.edited_by} — ${v.created_at}`;
+                div.onclick = () => restoreVersion(v.id);
+                listDiv.appendChild(div);
+            });
+        }
+
+        async function restoreVersion(versionId) {
+            const response = await fetch(`/api/documents/${documentId}/versions/${versionId}/restore/`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                document.getElementById('doc-content').value = data.content;
+                currentVersion = data.version;
+                document.getElementById('status-msg').innerText = 'Restored ✓';
+            }
+        }
+
+        loadDocument();
+    </script>
+{% endblock %}

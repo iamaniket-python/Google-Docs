@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Log in · Inkwell{% endblock %}
+
+{% block topbar_actions %}
+  <span>New here? <a href="{% url 'register-page' %}">Create an account</a></span>
+{% endblock %}
+
+{% block extra_style %}
+  .auth-wrap {
+    min-height: calc(100vh - 61px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-6) var(--space-4);
+    background:
+      radial-gradient(600px 300px at 15% 0%, rgba(47, 107, 79, 0.06), transparent 60%),
+      var(--color-bg);
+  }
+
+  .auth-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-md);
+    padding: var(--space-6) var(--space-5);
+  }
+
+  .auth-card__header {
+    margin-bottom: var(--space-5);
+  }
+
+  .auth-card__header h1 {
+    font-size: 22px;
+    margin-bottom: var(--space-1);
+  }
+
+  .auth-card__header p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-ink-muted);
+  }
+
+  .auth-card__footer {
+    margin-top: var(--space-5);
+    text-align: center;
+    font-size: 13.5px;
+    color: var(--color-ink-muted);
+  }
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-card__header">
+      <h1>Welcome back</h1>
+      <p>Log in to keep writing where you left off.</p>
+    </div>
+
+    <div id="error-msg" class="message message--error"></div>
+
+    <form onsubmit="return false;">
+      <div class="field">
+        <label for="username">Username</label>
+        <input
+          type="text"
+          id="username"
+          class="input"
+          placeholder="Your username"
+          oninput="onUserTypes()"
+          autocomplete="username"
+        >
+      </div>
+
+      <div class="field">
+        <label for="password">Password</label>
+        <input
+          type="password"
+          id="password"
+          class="input"
+          placeholder="Your password"
+          autocomplete="current-password"
+        >
+      </div>
+
+      <button type="button" class="btn btn-primary btn-block" onclick="doLogin()">
+        Log in
+      </button>
+    </form>
+
+    <div class="auth-card__footer">
+      Don't have an account? <a href="{% url 'register-page' %}">Sign up</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+  function onUserTypes() {
+    // Clears any previous error as the person edits the form.
+    const errorEl = document.getElementById('error-msg');
+    if (errorEl) errorEl.textContent = '';
+  }
+
+  function doLogin() {
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+    const errorEl = document.getElementById('error-msg');
+    errorEl.textContent = '';
+
+    if (!username || !password) {
+      errorEl.textContent = 'Please enter both a username and password.';
+      return;
+    }
+
+        fetch('/api/auth/login/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.detail || 'Invalid username or password.');
+        }
+        return res.json();
+      })
+      .then((data) => {
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('refresh_token', data.refresh);
+        window.location.href = '/documents/';
+      })
+      .catch((err) => {
+        errorEl.textContent = err.message || 'Something went wrong. Please try again.';
+      });
+  }
+</script>
+{% endblock %}

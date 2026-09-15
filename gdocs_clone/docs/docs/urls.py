@@ -16,9 +16,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path , include
+from documents.views import login_page,documents_page,document_editor_page,register_page
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/documents/', include('documents.urls')),
+    path('login/', login_page, name='login-page'),
+    path('register/', register_page, name='register-page'),
+    path('documents/', documents_page, name='documents-page'),
+    path('documents/<int:document_id>/', document_editor_page, name='document-editor-page'),
 ]
