@@ -1,82 +1,237 @@
 {% extends "base.html" %}
-{% block title %}My Documents{% endblock %}
+
+{% block title %}My Documents · Inkwell{% endblock %}
+
+{% block topbar_actions %}
+  <a href="#" onclick="logout()">Logout</a>
+{% endblock %}
+
+{% block extra_style %}
+  .page-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: var(--space-4);
+    margin-bottom: var(--space-6);
+    flex-wrap: wrap;
+  }
+
+  .page-head h1 {
+    font-size: 26px;
+    margin-bottom: var(--space-1);
+  }
+
+  .page-head p {
+    margin: 0;
+    font-size: 14px;
+    color: var(--color-ink-muted);
+  }
+
+  .create-bar {
+    display: flex;
+    gap: var(--space-2);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-2);
+    box-shadow: var(--shadow-sm);
+    margin-bottom: var(--space-6);
+  }
+
+  .create-bar .input {
+    flex: 1;
+    border: none;
+    box-shadow: none;
+    padding: 10px var(--space-3);
+  }
+
+  .create-bar .input:focus {
+    box-shadow: none;
+    border: none;
+  }
+
+  .doc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-4);
+  }
+
+  .doc-card {
+    position: relative;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    cursor: pointer;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .doc-card:hover {
+    border-color: var(--color-accent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
+  }
+
+  .doc-card__icon {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-sm);
+    background: var(--color-accent-soft);
+    color: var(--color-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 17px;
+    margin-bottom: var(--space-3);
+  }
+
+  .doc-card__title {
+    font-family: var(--font-doc);
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--color-ink);
+    margin-bottom: var(--space-2);
+    word-break: break-word;
+  }
+
+  .doc-card__meta {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .doc-card__badge {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--color-ink-muted);
+    background: var(--color-surface-sunken);
+    border-radius: 999px;
+    padding: 3px 10px;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: var(--space-7) var(--space-4);
+    color: var(--color-ink-faint);
+  }
+
+  .empty-state__icon {
+    font-size: 40px;
+    margin-bottom: var(--space-3);
+  }
+
+  .empty-state p {
+    font-size: 14px;
+  }
+{% endblock %}
+
 {% block content %}
-    <div class="navbar">
-        <span class="brand">📄 Docs Clone</span>
-        <a href="#" onclick="logout()">Logout</a>
-    </div>
-
-    <div class="container">
-        <div class="card">
-            <h2>My Documents</h2>
-            <div class="form-row">
-                <input type="text" id="new-doc-title" placeholder="New document title" style="flex:1;">
-                <button onclick="createDocument()">+ Create Document</button>
-            </div>
-            <p class="error" id="error-msg"></p>
+<div class="container">
+    <div class="page-head">
+        <div>
+            <h1>My documents</h1>
+            <p>Everything you've written, all in one place.</p>
         </div>
-
-        <div id="doc-list"></div>
     </div>
 
-    <script>
-        const token = localStorage.getItem('access_token');
-        if (!token) {
-            window.location.href = '/login/';
-        }
+    <div class="create-bar">
+        <input type="text" id="new-doc-title" class="input" placeholder="Name a new document and press Create…">
+        <button class="btn btn-primary" onclick="createDocument()">+ Create</button>
+    </div>
 
-        function logout() {
+    <div id="error-msg" class="message message--error"></div>
+
+    <div id="doc-list" class="doc-grid"></div>
+</div>
+{% endblock %}
+
+{% block extra_script %}
+<script>
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+        window.location.href = '/login/';
+    }
+
+    function logout() {
+        localStorage.clear();
+        window.location.href = '/login/';
+    }
+
+    function timeAgo(dateString) {
+        const diffMs = Date.now() - new Date(dateString).getTime();
+        const mins = Math.floor(diffMs / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
+    }
+
+    async function loadDocuments() {
+        const response = await fetch('/api/documents/', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.status === 401) {
             localStorage.clear();
             window.location.href = '/login/';
+            return;
         }
 
-        async function loadDocuments() {
-            const response = await fetch('/api/documents/', {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
+        const docs = await response.json();
+        const listDiv = document.getElementById('doc-list');
+        listDiv.innerHTML = '';
 
-            if (response.status === 401) {
-                localStorage.clear();
-                window.location.href = '/login/';
-                return;
-            }
-
-            const docs = await response.json();
-            const listDiv = document.getElementById('doc-list');
-            listDiv.innerHTML = '';
-
-            docs.forEach(doc => {
-                const div = document.createElement('div');
-                div.className = 'doc-item';
-                div.innerText = `${doc.title} (v${doc.version}) — owner: ${doc.owner}`;
-                div.onclick = () => {
-                    window.location.href = `/documents/${doc.id}/`;
-                };
-                listDiv.appendChild(div);
-            });
+        if (docs.length === 0) {
+            listDiv.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <div class="empty-state__icon">📄</div>
+                    <p>No documents yet — create your first one above.</p>
+                </div>`;
+            return;
         }
 
-        async function createDocument() {
-            const title = document.getElementById('new-doc-title').value;
-            if (!title) return;
+        docs.forEach(doc => {
+            const div = document.createElement('div');
+            div.className = 'doc-card';
+            div.innerHTML = `
+                <div class="doc-card__icon">📄</div>
+                <div class="doc-card__title">${doc.title}</div>
+                <div class="doc-card__meta">
+                    <span class="doc-card__badge">v${doc.version}</span>
+                    <span class="doc-card__badge">${doc.owner}</span>
+                    <span class="doc-card__badge">${timeAgo(doc.updated_at)}</span>
+                </div>
+            `;
+            div.onclick = () => {
+                window.location.href = `/documents/${doc.id}/`;
+            };
+            listDiv.appendChild(div);
+        });
+    }
 
-            const response = await fetch('/api/documents/', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ title, content: '' }),
-            });
+    async function createDocument() {
+        const title = document.getElementById('new-doc-title').value;
+        if (!title) return;
 
-            if (response.ok) {
-                document.getElementById('new-doc-title').value = '';
-                loadDocuments();
-            } else {
-                document.getElementById('error-msg').innerText = 'Failed to create document.';
-            }
+        const response = await fetch('/api/documents/', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ title, content: '' }),
+        });
+
+        if (response.ok) {
+            document.getElementById('new-doc-title').value = '';
+            loadDocuments();
+        } else {
+            document.getElementById('error-msg').innerText = 'Failed to create document.';
         }
+    }
 
-        loadDocuments();
-    </script>
+    loadDocuments();
+</script>
 {% endblock %}

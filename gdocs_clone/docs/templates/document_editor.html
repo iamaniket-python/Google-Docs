@@ -1,174 +1,299 @@
 {% extends "base.html" %}
-{% block title %}Document Editor{% endblock %}
+
+{% block title %}Editor · Inkwell{% endblock %}
+
+{% block topbar_actions %}
+  <a href="/documents/">&larr; My documents</a>
+{% endblock %}
+
+{% block extra_head %}
+  <link href="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.snow.css" rel="stylesheet">
+{% endblock %}
+
+{% block extra_style %}
+  .editor-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    padding: var(--space-5);
+    margin-bottom: var(--space-5);
+    overflow: hidden;
+  }
+
+  .editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+
+  .editor-header h2 {
+    font-size: 20px;
+  }
+
+  /* Quill toolbar — match Inkwell tokens */
+  .ql-toolbar.ql-snow {
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    background: var(--color-surface-sunken);
+  }
+
+  .ql-container.ql-snow {
+    border: 1px solid var(--color-border-strong);
+    border-top: none;
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    font-family: var(--font-doc);
+    font-size: 17px;
+  }
+
+  #quill-editor {
+    min-height: 55vh;
+  }
+
+  .ql-editor {
+    min-height: 55vh;
+    line-height: 1.7;
+    color: var(--color-ink);
+  }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-ink-muted);
+    margin-bottom: var(--space-4);
+  }
+
+  .share-row {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .share-row .input {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  #version-list {
+    margin-top: var(--space-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .version-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-size: 13.5px;
+    color: var(--color-ink-muted);
+    transition: border-color 120ms ease, color 120ms ease;
+  }
+
+  .version-item:hover {
+    border-color: var(--color-accent);
+    color: var(--color-ink);
+  }
+{% endblock %}
+
 {% block content %}
-    <div class="container">
-        <a href="/documents/" class="back-link">&larr; Back to documents</a>
-
-        <div class="card">
-            <div class="editor-header">
-                <h2 id="doc-title">Loading...</h2>
-            </div>
-            <textarea id="doc-content" oninput="onUserTypes()"></textarea>
-            <p class="status" id="status-msg"></p>
-            <p class="error" id="error-msg"></p>
+<div class="container">
+    <div class="editor-card">
+        <div class="editor-header">
+            <h2 id="doc-title">Loading...</h2>
+            <span class="status-pill"><span class="status-dot"></span><span id="status-msg"></span></span>
         </div>
+        <div id="quill-editor"></div>
+        <div id="error-msg" class="message message--error" style="margin-top: var(--space-3);"></div>
+    </div>
 
-        <div class="card">
-            <h4>Share this document</h4>
-            <div class="form-row">
-                <input type="text" id="share-username" placeholder="Username">
-                <select id="share-permission">
-                    <option value="view">View only</option>
-                    <option value="edit">Can edit</option>
-                </select>
-                <button onclick="shareDocument()">Share</button>
-            </div>
-        </div>
-
-        <div class="card">
-            <h4>Version History</h4>
-            <button class="secondary" onclick="loadVersions()">Show history</button>
-            <div id="version-list"></div>
+    <div class="editor-card">
+        <div class="card-title">Share this document</div>
+        <div class="share-row">
+            <input type="text" id="share-username" class="input" placeholder="Username">
+            <select id="share-permission" class="input" style="flex: 0 0 160px;">
+                <option value="view">View only</option>
+                <option value="edit">Can edit</option>
+            </select>
+            <button class="btn btn-primary" onclick="shareDocument()">Share</button>
         </div>
     </div>
 
-    <script>
-        const token = localStorage.getItem('access_token');
-        if (!token) window.location.href = '/login/';
+    <div class="editor-card">
+        <div class="card-title">Version history</div>
+        <button class="btn btn-secondary" onclick="loadVersions()">Show history</button>
+        <div id="version-list"></div>
+    </div>
+</div>
+{% endblock %}
 
-        const documentId = window.location.pathname.split('/')[2];
-        let currentVersion = null;
-        let saveTimeout = null;
-        let socket = null;
+{% block extra_script %}
+<script src="https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js"></script>
+<script>
+    const token = localStorage.getItem('access_token');
+    if (!token) window.location.href = '/login/';
 
-        async function loadDocument() {
-            const response = await fetch(`/api/documents/${documentId}/`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
+    const documentId = window.location.pathname.split('/')[2];
+    let currentVersion = null;
+    let saveTimeout = null;
+    let socket = null;
 
-            if (response.status === 401) {
-                window.location.href = '/login/';
-                return;
-            }
-            if (response.status === 403 || response.status === 404) {
-                document.getElementById('error-msg').innerText = 'Document not found or access denied.';
-                return;
-            }
+    const quill = new Quill('#quill-editor', {
+        theme: 'snow',
+        modules: {
+            toolbar: [
+                [{ header: [1, 2, 3, false] }],
+                ['bold', 'italic', 'underline', 'strike'],
+                [{ list: 'ordered' }, { list: 'bullet' }],
+                ['link'],
+                ['clean'],
+            ],
+        },
+    });
 
-            const doc = await response.json();
-            document.getElementById('doc-title').innerText = doc.title;
-            document.getElementById('doc-content').value = doc.content;
-            currentVersion = doc.version;
+    quill.on('text-change', (delta, oldDelta, source) => {
+        if (source === 'user') {
+            onUserTypes();
+        }
+    });
 
-            connectWebSocket();
+    async function loadDocument() {
+        const response = await fetch(`/api/documents/${documentId}/`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.status === 401) {
+            window.location.href = '/login/';
+            return;
+        }
+        if (response.status === 403 || response.status === 404) {
+            document.getElementById('error-msg').innerText = 'Document not found or access denied.';
+            return;
         }
 
-        function connectWebSocket() {
-            socket = new WebSocket(`ws://127.0.0.1:8000/ws/document/${documentId}/?token=${token}`);
+        const doc = await response.json();
+        document.getElementById('doc-title').innerText = doc.title;
+        quill.root.innerHTML = doc.content || '';
+        currentVersion = doc.version;
 
-            socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                document.getElementById('doc-content').value = data.content;
-                document.getElementById('status-msg').innerText = `Live update from ${data.username}`;
-            };
+        connectWebSocket();
+    }
 
-            socket.onclose = (e) => {
-                if (e.code === 4001) document.getElementById('error-msg').innerText = 'Not authenticated.';
-                if (e.code === 4003) document.getElementById('error-msg').innerText = 'Access denied to this document.';
-            };
+    function connectWebSocket() {
+        socket = new WebSocket(`ws://127.0.0.1:8000/ws/document/${documentId}/?token=${token}`);
+
+        socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            quill.root.innerHTML = data.content;
+            document.getElementById('status-msg').innerText = `Live update from ${data.username}`;
+        };
+
+        socket.onclose = (e) => {
+            if (e.code === 4001) document.getElementById('error-msg').innerText = 'Not authenticated.';
+            if (e.code === 4003) document.getElementById('error-msg').innerText = 'Access denied to this document.';
+        };
+    }
+
+    function onUserTypes() {
+        const content = quill.root.innerHTML;
+
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ content }));
         }
 
-        function onUserTypes() {
-            const content = document.getElementById('doc-content').value;
+        document.getElementById('status-msg').innerText = 'Typing...';
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => saveToServer(content), 1500);
+    }
 
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify({ content }));
-            }
+    async function saveToServer(content) {
+        document.getElementById('status-msg').innerText = 'Saving...';
 
-            document.getElementById('status-msg').innerText = 'Typing...';
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => saveToServer(content), 1500);
-        }
+        const response = await fetch(`/api/documents/${documentId}/`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ content, expected_version: currentVersion }),
+        });
 
-        async function saveToServer(content) {
-            document.getElementById('status-msg').innerText = 'Saving...';
-
-            const response = await fetch(`/api/documents/${documentId}/`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ content, expected_version: currentVersion }),
-            });
-
-            if (response.status === 409) {
-                const data = await response.json();
-                document.getElementById('error-msg').innerText =
-                    'Conflict! Someone else edited this document. Reloading latest version.';
-                document.getElementById('doc-content').value = data.current_content;
-                currentVersion = data.current_version;
-                return;
-            }
-
+        if (response.status === 409) {
             const data = await response.json();
+            document.getElementById('error-msg').innerText =
+                'Conflict! Someone else edited this document. Reloading latest version.';
+            quill.root.innerHTML = data.current_content;
+            currentVersion = data.current_version;
+            return;
+        }
+
+        const data = await response.json();
+        currentVersion = data.version;
+        document.getElementById('status-msg').innerText = 'Saved ✓';
+    }
+
+    async function shareDocument() {
+        const username = document.getElementById('share-username').value;
+        const permission = document.getElementById('share-permission').value;
+
+        const response = await fetch(`/api/documents/${documentId}/share/`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ username, permission }),
+        });
+
+        if (response.ok) {
+            document.getElementById('status-msg').innerText = `Shared with ${username}`;
+        } else {
+            const data = await response.json();
+            document.getElementById('error-msg').innerText = data.detail || 'Share failed.';
+        }
+    }
+
+    async function loadVersions() {
+        const response = await fetch(`/api/documents/${documentId}/versions/`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        const versions = await response.json();
+
+        const listDiv = document.getElementById('version-list');
+        listDiv.innerHTML = '';
+
+        versions.forEach(v => {
+            const div = document.createElement('div');
+            div.className = 'version-item';
+            div.innerText = `v${v.version_number} — by ${v.edited_by} — ${v.created_at}`;
+            div.onclick = () => restoreVersion(v.id);
+            listDiv.appendChild(div);
+        });
+    }
+
+    async function restoreVersion(versionId) {
+        const response = await fetch(`/api/documents/${documentId}/versions/${versionId}/restore/`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            quill.root.innerHTML = data.content;
             currentVersion = data.version;
-            document.getElementById('status-msg').innerText = 'Saved ✓';
+            document.getElementById('status-msg').innerText = 'Restored ✓';
         }
+    }
 
-        async function shareDocument() {
-            const username = document.getElementById('share-username').value;
-            const permission = document.getElementById('share-permission').value;
-
-            const response = await fetch(`/api/documents/${documentId}/share/`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({ username, permission }),
-            });
-
-            if (response.ok) {
-                document.getElementById('status-msg').innerText = `Shared with ${username}`;
-            } else {
-                const data = await response.json();
-                document.getElementById('error-msg').innerText = data.detail || 'Share failed.';
-            }
-        }
-
-        async function loadVersions() {
-            const response = await fetch(`/api/documents/${documentId}/versions/`, {
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            const versions = await response.json();
-
-            const listDiv = document.getElementById('version-list');
-            listDiv.innerHTML = '';
-
-            versions.forEach(v => {
-                const div = document.createElement('div');
-                div.className = 'doc-item';
-                div.innerText = `v${v.version_number} — by ${v.edited_by} — ${v.created_at}`;
-                div.onclick = () => restoreVersion(v.id);
-                listDiv.appendChild(div);
-            });
-        }
-
-        async function restoreVersion(versionId) {
-            const response = await fetch(`/api/documents/${documentId}/versions/${versionId}/restore/`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                document.getElementById('doc-content').value = data.content;
-                currentVersion = data.version;
-                document.getElementById('status-msg').innerText = 'Restored ✓';
-            }
-        }
-
-        loadDocument();
-    </script>
+    loadDocument();
+</script>
 {% endblock %}
